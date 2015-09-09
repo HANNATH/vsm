@@ -16,7 +16,7 @@ class LdaCgsSeq(object):
     An implementation of LDA using collapsed Gibbs sampling.
     """
     def __init__(self, corpus=None, context_type=None,
-                 K=20, V=0, alpha=[], beta=[]):
+                 K=20, V=0, alpha=[], beta=[], seed=None):
         """
         Initialize LdaCgsSeq.
 
@@ -30,12 +30,15 @@ class LdaCgsSeq(object):
         :param K: Number of topics. Default is `20`.
         :type K: int, optional
 
-        :param beta: Topic priors. Default is 0.01 for all words.
-        :type beta: list, optional
-
         :param alpha: Document priors. Default is a flat prior of 0.01
             for all topics.
         :type alpha: list, optional
+
+        :param beta: Topic priors. Default is 0.01 for all words.
+        :type beta: list, optional
+
+        :param seed: Seed for numpy's RandomState. Default is `None`.
+        :type seed: int, optional
         """
 
         self.context_type = context_type
@@ -68,6 +71,13 @@ class LdaCgsSeq(object):
         self.iteration = 0
         self.log_probs = []
 
+        if seed is None:
+            maxint = np.iinfo(np.int32).max
+            self.seed = np.random.randint(0, maxint)
+        else:
+            self.seed = seed
+        self._mtrand_state = np.random.RandomState(self.seed).get_state()
+
 
     @property
     def Z_split(self):
@@ -98,7 +108,7 @@ class LdaCgsSeq(object):
             return log_prob
 
 
-    def train(self, n_iterations=100, verbose=1, seed=None, **kwargs):
+    def train(self, n_iterations=100, verbose=1, **kwargs):
         """
         Takes an optional argument, `n_iterations` and updates the model
         `n_iterations` times.
@@ -109,15 +119,12 @@ class LdaCgsSeq(object):
         :param verbose: If 1, current number of iterations
             are printed out to notify the user. Default is 1.
         :type verbose: int, optional
-
-        :param seed: Seed for numpy's RandomState. Default is `None`.
-        :type seed: int, optional
         
         :param kwargs: For compatability with calls to LdaCgsMulti.
         :type kwargs: optional
         """
-        random_state = np.random.RandomState(seed)
-        mtrand_state = random_state.get_state()
+        random_state = np.random.RandomState(self.seed)
+        random_state.set_state(self._mtrand_state)
 
 
         if verbose > 0:
@@ -128,15 +135,15 @@ class LdaCgsSeq(object):
 
         # Training loop
         stop = self.iteration + n_iterations
-        pbar = ProgressBar(widgets=[Percentage(), Bar()], maxval=stop).start()
+        pbar = ProgressBar(widgets=[Percentage(), Bar()], maxval=n_iterations).start()
         #print("Stop ", stop)
         for itr in xrange(self.iteration , stop):
 
             results = cgs_update(self.iteration, self.corpus, self.word_top,
                                  self.inv_top_sums, self.top_doc, self.Z,
-                                 self.indices, mtrand_state[0],
-                                 mtrand_state[1], mtrand_state[2],
-                                 mtrand_state[3], mtrand_state[4])
+                                 self.indices, self._mtrand_state[0],
+                                 self._mtrand_state[1], self._mtrand_state[2],
+                                 self._mtrand_state[3], self._mtrand_state[4])
 
             lp = results[4]
             self.log_probs.append((self.iteration, lp))
@@ -150,12 +157,13 @@ class LdaCgsSeq(object):
 
             if verbose == 1:
                 #print("Self iteration", self.iteration)
-                pbar.update(self.iteration)
+                pbar.update(self.iteration - (stop - n_iterations))
                 time.sleep(0.01)
 
             self.iteration += 1
 
-            mtrand_state = results[5:]
+            self._mtrand_state = results[5:]
+
         pbar.finish();
         if verbose > 1:
             print '-'*60, ('\n\nWalltime per iteration: {0} seconds'
@@ -201,7 +209,7 @@ class LdaCgsQuerySampler(LdaCgsSeq):
             new_corp = align(old_corpus, new_corpus)
 
         if lda_obj:
-            if context_type==None:
+            if context_type is None:
                 context_type = lda_obj.context_type
 
             kwargs = dict(corpus=new_corpus,
@@ -239,7 +247,7 @@ def demo_LdaCgsSeq(doc_len=500, V=100000, n_docs=100,
     print 'Iterations:', n_iterations
 
     c = random_corpus(n_docs*doc_len, V, doc_len, doc_len+1, seed=corpus_seed)
-    m = LdaCgsSeq(c, 'document', K=K)
-    m.train(n_iterations=n_iterations, verbose=2, seed=model_seed)
+    m = LdaCgsSeq(c, 'document', K=K, seed=model_seed)
+    m.train(n_iterations=n_iterations, verbose=2)
 
     return m

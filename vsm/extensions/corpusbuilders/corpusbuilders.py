@@ -7,6 +7,7 @@ from codecs import open
 from vsm.corpus import Corpus
 from util import *
 
+from progressbar import ProgressBar, Percentage, Bar
 
 __all__ = ['empty_corpus', 'random_corpus',
            'toy_corpus', 'corpus_fromlist',
@@ -160,8 +161,8 @@ def corpus_fromlist(ls, context_type='context'):
                   context_types=[context_type])
 
 
-def toy_corpus(plain_corpus, is_filename=False, nltk_stop=False,
-               stop_freq=0, add_stop=None, metadata=None):
+def toy_corpus(plain_corpus, is_filename=False, encoding='utf8', nltk_stop=False,
+               stop_freq=0, add_stop=None, metadata=None, autolabel=False):
     """
     `toy_corpus` is a convenience function for generating Corpus
     objects from a given string or a single file.
@@ -190,6 +191,11 @@ def toy_corpus(plain_corpus, is_filename=False, nltk_stop=False,
         a filename. Otherwise, `plain_corpus` is presumed to contain 
         the corpus. Default is `False`.
     :type is_filename: boolean, optional
+
+    :param encoding: A string indicating the file encoding or 'detect',
+        in which case `chardet` is used to automatically guess the encoding.
+        Default is `utf8`.
+    :type encoding: string, optional
     
     :param nltk_stop: If `True` then the corpus object is masked using
         the NLTK English stop words. Default is `False`.
@@ -207,6 +213,10 @@ def toy_corpus(plain_corpus, is_filename=False, nltk_stop=False,
         Default is `None`.
     :type metadata: array-like, optional
     
+    :param autolabel: A boolean specifying whether to automatically label
+        documents by position in file. Default is False
+    :type metadata: boolean, optional
+    
     :returns: c : a Corpus object
         Contains the tokenized corpus built from the input plain-text
         corpus. Document tokens are named `documents`.
@@ -216,7 +226,9 @@ def toy_corpus(plain_corpus, is_filename=False, nltk_stop=False,
         :meth:`vsm.corpus.util.apply_stoplist`
     """
     if is_filename:
-        with open(plain_corpus, 'r', encoding='utf8') as f:
+        if encoding == 'detect':
+            encoding = detect_encoding(plain_corpus)
+        with open(plain_corpus, 'rb', encoding=encoding) as f:
             plain_corpus = f.read()
 
     docs = paragraph_tokenize(plain_corpus)
@@ -224,6 +236,9 @@ def toy_corpus(plain_corpus, is_filename=False, nltk_stop=False,
 
     corpus = sum(docs, [])
     tok = np.cumsum(np.array([len(d) for d in docs]))
+
+    if not metadata and autolabel:
+        metadata = ['Document {0}'.format(i) for i in range(len(tok))]
 
     if metadata:
         if not len(metadata) == len(tok):
@@ -291,7 +306,8 @@ def file_tokenize(text):
     return words, corpus_data
 
 
-def file_corpus(filename, nltk_stop=True, stop_freq=1, add_stop=None):
+def file_corpus(filename, encoding='utf8', nltk_stop=True, stop_freq=1, 
+                add_stop=None):
     """
     `file_corpus` is a convenience function for generating Corpus
     objects from a a plain text corpus contained in a single string.
@@ -301,6 +317,11 @@ def file_corpus(filename, nltk_stop=True, stop_freq=1, add_stop=None):
 
     :param filename: File name of the plain text file.
     :type plain_dir: string-like
+
+    :param encoding: A string indicating the file encoding or 'detect',
+        in which case `chardet` is used to automatically guess the encoding.
+        Default is `utf8`.
+    :type encoding: string, optional
     
     :param nltk_stop: If `True` then the corpus object is masked 
         using the NLTK English stop words. Default is `False`.
@@ -321,7 +342,9 @@ def file_corpus(filename, nltk_stop=True, stop_freq=1, add_stop=None):
         :meth:`file_tokenize`, 
         :meth:`vsm.corpus.util.apply_stoplist`
     """
-    with open(filename, mode='r', encoding='utf8') as f:
+    if encoding == 'detect':
+        encoding = detect_encoding(filename)
+    with open(filename, mode='r', encoding=encoding) as f:
         text = f.read()
 
     words, tok = file_tokenize(text)
@@ -334,8 +357,8 @@ def file_corpus(filename, nltk_stop=True, stop_freq=1, add_stop=None):
     return c
 
 
-def json_corpus(json_file, doc_key, label_key, nltk_stop=False,
-               stop_freq=0, add_stop=None):
+def json_corpus(json_file, doc_key, label_key, encoding='utf8',
+                nltk_stop=False, stop_freq=0, add_stop=None):
     """
     `json_corpus` is a convenience function for generating Corpus
     objects from a json file. It construct a corpus, document labels
@@ -355,6 +378,11 @@ def json_corpus(json_file, doc_key, label_key, nltk_stop=False,
     used when a viewer function outputs a list of documents. Any field other
     than `doc_key` and `label_key` is stored as metadata.
     :type label_key: string-like
+
+    :param encoding: A string indicating the file encoding or 'detect',
+        in which case `chardet` is used to automatically guess the encoding.
+        Default is `utf8`.
+    :type encoding: string, optional
     
     :param nltk_stop: If `True` then the corpus object is masked using
         the NLTK English stop words. Default is `False`.
@@ -377,7 +405,9 @@ def json_corpus(json_file, doc_key, label_key, nltk_stop=False,
     """
     import json
 
-    with open(json_file, 'r', encoding='utf8') as f:
+    if encoding == 'detect':
+        encoding = detect_encoding(json_file)
+    with open(json_file, 'r', encoding=encoding) as f:
         json_data = json.load(f)
 
     docs = []
@@ -408,7 +438,8 @@ def json_corpus(json_file, doc_key, label_key, nltk_stop=False,
 
 
 
-def dir_tokenize(chunks, labels, chunk_name='article', paragraphs=True):
+def dir_tokenize(chunks, labels, chunk_name='article', paragraphs=True,
+                 verbose=1):
     """`dir_tokenize` is a helper function for :meth:`dir_corpus`.
 
     Takes a list of strings and labels and returns words and corpus data.
@@ -427,6 +458,9 @@ def dir_tokenize(chunks, labels, chunk_name='article', paragraphs=True):
     :param paragraphs: If `True`, a paragraph-level tokenization 
         is included. Defaults to `True`.
     :type paragraphs: boolean, optional
+
+    :param verbose: Verbosity level. 1 prints a progress bar.
+    :type verbose: int, default 1 
     
     :returns: words : List of words.
         words in the `chunks` tokenized by :meth: word_tokenize.
@@ -437,6 +471,9 @@ def dir_tokenize(chunks, labels, chunk_name='article', paragraphs=True):
     """
     words, chk_tokens, sent_tokens = [], [], []
     sent_break, chk_n, sent_n = 0, 0, 0
+    
+    if verbose == 1:
+        pbar = ProgressBar(widgets=[Percentage(), Bar()], maxval=len(chunks)).start()
 
     if paragraphs:
         par_tokens = []
@@ -458,6 +495,9 @@ def dir_tokenize(chunks, labels, chunk_name='article', paragraphs=True):
 
                 par_tokens.append((sent_break, label, par_n))
                 par_n += 1
+    
+            if verbose == 1:
+                pbar.update(chk_n)
 
             chk_tokens.append((sent_break, label))
             chk_n += 1
@@ -472,9 +512,13 @@ def dir_tokenize(chunks, labels, chunk_name='article', paragraphs=True):
                 sent_break += len(w)
                 sent_tokens.append((sent_break, label, sent_n))
                 sent_n += 1
+    
+            if verbose == 1:
+                pbar.update(chk_n)
 
             chk_tokens.append((sent_break, label))
             chk_n += 1
+
 
     idx_dt = ('idx', np.int32)
     label_dt = (chunk_name + '_label', np.array(labels).dtype)
@@ -492,14 +536,18 @@ def dir_tokenize(chunks, labels, chunk_name='article', paragraphs=True):
     else:
         dtype = [idx_dt, label_dt, sent_label_dt]
         corpus_data['sentence'] = np.array(sent_tokens, dtype=dtype)
+    
+    if verbose == 1:
+        pbar.finish()
 
     return words, corpus_data
 
 
 
-def dir_corpus(plain_dir, chunk_name='article', paragraphs=True,
-               ignore=['.json','.log','.pickle'], nltk_stop=True, stop_freq=1, 
-               add_stop=None, decode=False):
+def dir_corpus(plain_dir, chunk_name='article', encoding='utf8', 
+               paragraphs=True, ignore=['.json','.log','.pickle'], 
+               nltk_stop=True, stop_freq=1, add_stop=None, decode=False, 
+               verbose=1):
     """
     `dir_corpus` is a convenience function for generating Corpus
     objects from a directory of plain text files.
@@ -521,6 +569,11 @@ def dir_corpus(plain_dir, chunk_name='article', paragraphs=True,
         is `articles`.
     :type chunk_name: string-like, optional
     
+    :param encoding: A string indicating the file encoding or 'detect',
+        in which case `chardet` is used to automatically guess the encoding.
+        Default is `utf8`.
+    :type encoding: string, optional
+    
     :param paragraphs: If `True`, a paragraph-level tokenization 
         is included. Defaults to `True`.
     :type paragraphs: boolean, optional
@@ -541,6 +594,9 @@ def dir_corpus(plain_dir, chunk_name='article', paragraphs=True,
     :param add_stop: A list of stop words. Default is `None`.
     :type add_stop: array-like, optional
 
+    :param verbose: Verbosity level. 1 prints a progress bar.
+    :type verbose: int, default 1 
+
     :returns: c : a Corpus object
         Contains the tokenized corpus built from the input plain-text
         corpus. Document tokens are named `documents`.
@@ -556,16 +612,18 @@ def dir_corpus(plain_dir, chunk_name='article', paragraphs=True,
 
     for filename in filenames:
         filename = os.path.join(plain_dir, filename)
+        if encoding == 'detect':
+            encoding = detect_encoding(filename)
         if decode:
-            with open(filename, mode='r', encoding='utf8') as f:
+            with open(filename, mode='r', encoding=encoding) as f:
                 if decode:
                     chunks.append(unidecode(f.read()))
         else:
-            with open(filename, mode='r', encoding='utf8') as f:
+            with open(filename, mode='r', encoding=encoding) as f:
                 chunks.append(f.read())
 
     words, tok = dir_tokenize(chunks, filenames, chunk_name=chunk_name,
-                              paragraphs=paragraphs)
+                              paragraphs=paragraphs, verbose=verbose)
     names, data = zip(*tok.items())
     
     c = Corpus(words, context_data=data, context_types=names)
@@ -576,7 +634,7 @@ def dir_corpus(plain_dir, chunk_name='article', paragraphs=True,
 
 
 
-def coll_tokenize(books, book_names):
+def coll_tokenize(books, book_names, verbose=1):
     """
     `coll_tokenize` is a helper function for :meth:`coll_corpus`.
 
@@ -589,6 +647,9 @@ def coll_tokenize(books, book_names):
     :param book_names: List of book names.
     :type book_names: list
 
+    :param verbose: Verbosity level. 1 prints a progress bar.
+    :type verbose: int, default 1 
+
     :returns: words : List of words.
         words in the `books` tokenized by :meth:`word_tokenize`.
         corpus_data : Dictionary with context type as keys and
@@ -598,6 +659,8 @@ def coll_tokenize(books, book_names):
     words, book_tokens, page_tokens, sent_tokens = [], [], [], []
     sent_break, book_n, page_n, sent_n = 0, 0, 0, 0
 
+    if verbose == 1:
+        pbar = ProgressBar(widgets=[Percentage(), Bar()], maxval=len(books)).start()
 
     for book, book_label in zip(books, book_names):
         # print 'Tokenizing', book_label
@@ -614,6 +677,9 @@ def coll_tokenize(books, book_names):
 
             page_tokens.append((sent_break, page_n, book_label, page_file))
             page_n += 1
+
+        if verbose == 1:
+            pbar.update(book_n)
             
         book_tokens.append((sent_break, book_label))
         book_n += 1
@@ -633,13 +699,16 @@ def coll_tokenize(books, book_names):
     dtype = [idx_dt, sent_label_dt, page_label_dt, book_label_dt, file_dt]
     corpus_data['sentence'] = np.array(sent_tokens, dtype=dtype)
 
+    if verbose == 1:
+        pbar.finish()
+
     return words, corpus_data
 
 
 #TODO: This should be a whitelist not a blacklist
-def coll_corpus(coll_dir, ignore=['.json', '.log', '.pickle'],
+def coll_corpus(coll_dir, encoding='utf8', ignore=['.json', '.log', '.pickle'],
                 nltk_stop=True, stop_freq=1, add_stop=None, 
-                decode=False):
+                decode=False, verbose=1):
     """
     `coll_corpus` is a convenience function for generating Corpus
     objects from a directory of plain text files.
@@ -650,6 +719,11 @@ def coll_corpus(coll_dir, ignore=['.json', '.log', '.pickle'],
     :param coll_dir: Directory containing a collections of books
         which contain pages as plain-text files.
     :type coll_dir: string-like
+    
+    :param encoding: A string indicating the file encoding or 'detect',
+        in which case `chardet` is used to automatically guess the encoding.
+        Default is `utf8`.
+    :type encoding: string, optional
     
     :param ignore: The list containing suffixes of files to be filtered.
         The suffix strings are normally file types. Default is ['.json',
@@ -666,6 +740,9 @@ def coll_corpus(coll_dir, ignore=['.json', '.log', '.pickle'],
     
     :param add_stop: A list of stop words. Default is `None`.
     :type add_stop: array-like, optional
+
+    :param verbose: Verbosity level. 1 prints a progress bar.
+    :type verbose: int, default 1 
 
     :returns: c : a Corpus object
         Contains the tokenized corpus built from the plain-text files
@@ -686,11 +763,13 @@ def coll_corpus(coll_dir, ignore=['.json', '.log', '.pickle'],
         for page_name in page_names:
             page_file = book_name + '/' + page_name
             page_name = os.path.join(book_path, page_name)
+            if encoding == 'detect':
+                encoding = detect_encoding(page_name)
             if decode:
-                with open(page_name, mode='r', encoding='utf8') as f:
+                with open(page_name, mode='r', encoding=encoding) as f:
                     pages.append((unidecode(f.read()), page_file))
             else:
-                with open(page_name, mode='r', encoding='utf8') as f:
+                with open(page_name, mode='r', encoding=encoding) as f:
                     pages.append((f.read(), page_file))
 
         books.append(pages)

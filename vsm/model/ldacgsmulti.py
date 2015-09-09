@@ -26,7 +26,7 @@ class LdaCgsMulti(LdaCgsSeq):
     instance, depending on the platform, while raising a RuntimeWarning.
     """
     def __init__(self, corpus=None, context_type=None, K=20, V=0, 
-                 alpha=[], beta=[]):
+                 alpha=[], beta=[], n_proc=2, seeds=None):
         """
         Initialize LdaCgsMulti.
 
@@ -40,12 +40,20 @@ class LdaCgsMulti(LdaCgsSeq):
         :param K: Number of topics. Default is `20`.
         :type K: int, optional
     
-        :param beta: Topic priors. Default is 0.01 for all topics.
-        :type beta: list, optional
-    
         :param alpha: Context priors. Default is a flat prior of 0.01 
             for all contexts.
         :type alpha: list, optional
+    
+        :param beta: Topic priors. Default is 0.01 for all topics.
+        :type beta: list, optional
+
+        :param n_proc: Number of processors used for training. Default is
+            2.
+        :type n_proc: int, optional
+        
+        :param seeds: List of random seeds, one for each thread.
+            The length of the list should be same as `n_proc`. Default is `None`.
+        :type seeds: list of integers, optional
         """
 	if platform.system() == 'Windows':
             raise NotImplementedError("""LdaCgsMulti is not implemented on 
@@ -54,8 +62,28 @@ class LdaCgsMulti(LdaCgsSeq):
         self._read_globals = False
         self._write_globals = False
 
+        self.n_proc = n_proc
+
+        # set random seeds if unspecified
+        if seeds is None:
+            maxint = np.iinfo(np.int32).max
+            seeds = [np.random.randint(0, maxint) for n in range(n_proc)]
+
+        # check number of seeds == n_proc
+        if len(seeds) != n_proc:
+            raise ValueError("Number of seeds must equal number of processors " +
+                             str(n_proc))
+
+        # initialize random states
+        self.seeds = seeds
+        self._mtrand_states = [np.random.RandomState(seed).get_state() for seed in self.seeds]
+
         super(LdaCgsMulti, self).__init__(corpus=corpus, context_type=context_type,
                                           K=K, V=V, alpha=alpha, beta=beta)
+
+        # delete LdaCgsSeq seed and state
+        del self.seed
+        del self._mtrand_state
         
         
     def _move_globals_to_locals(self):
@@ -195,7 +223,9 @@ class LdaCgsMulti(LdaCgsSeq):
     def K(self, K):
         if self._write_globals:
             global _K
-            _K = mp.Value('i', K, lock=False)
+            if not '_K' in globals():
+                _K = mp.Value('i')
+            _K.value = K
         else:
             self._K_local = K
 
@@ -210,7 +240,9 @@ class LdaCgsMulti(LdaCgsSeq):
     def V(self, V):
         if self._write_globals:
             global _V
-            _V = mp.Value('i', V, lock=False)
+            if not '_V' in globals():
+                _V = mp.Value('i')
+            _V.value = V
         else:
             self._V_local = V
 
@@ -225,12 +257,14 @@ class LdaCgsMulti(LdaCgsSeq):
     def iteration(self, iteration):
         if self._write_globals:
             global _iteration
-            _iteration = mp.Value('i', iteration, lock=False)
+            if not '_iteration' in globals():
+                _iteration = mp.Value('i')
+            _iteration.value = iteration
         else:
             self._iteration_local = iteration
 
 
-    def train(self, n_iterations=500, verbose=1, n_proc=2, seeds=None):
+    def train(self, n_iterations=500, verbose=1):
         """
         Takes an optional argument, `n_iterations` and updates the model
         `n_iterations` times.
@@ -241,40 +275,34 @@ class LdaCgsMulti(LdaCgsSeq):
         :param verbose: If `True`, current number of iterations
             are printed out to notify the user. Default is `True`.
         :type verbose: boolean, optional
-
-        :param n_proc: Number of processors used for training. Default is
-            2.
-        :type n_proc: int, optional
-        
-        :param seeds: List of random seeds, one for each thread.
-            The length of the list should be same as `n_proc`. Default is `None`.
-        :type seeds: list of integers, optional
         """
+        if mp.cpu_count() < self.n_proc:
+            raise RuntimeError("Model seeded with more cores than available." +
+                               " Requires {0} cores.".format(self.n_proc))
+
         self._move_locals_to_globals()
 
-        docs = split_documents(self.corpus, self.indices, n_proc)
+        docs = split_documents(self.corpus, self.indices, self.n_proc)
 
         doc_indices = [(0, len(docs[0]))]
         for i in xrange(len(docs)-1):
             doc_indices.append((doc_indices[i][1],
                                 doc_indices[i][1] + len(docs[i+1])))
 
-        if seeds == None:
-            seeds = [None] * n_proc
-        mtrand_states = [np.random.RandomState(seed).get_state() for seed in seeds]
-
-        p = mp.Pool(n_proc)
-        n_iterations += self.iteration
+        p = mp.Pool(self.n_proc)
 
 	if verbose == 1:
             pbar = ProgressBar(widgets=[Percentage(), Bar()], maxval=n_iterations).start()
+        
+        n_iterations += self.iteration
+        iteration = 0
 
         while self.iteration < n_iterations:
             if verbose == 2:
                 stdout.write('\rIteration %d: mapping  ' % self.iteration)
                 stdout.flush()
         
-            data = zip(docs, doc_indices, mtrand_states)
+            data = zip(docs, doc_indices, self._mtrand_states)
 
             # For debugging
 	    # results = map(update, data)
@@ -290,13 +318,13 @@ class LdaCgsMulti(LdaCgsSeq):
             
 	    if verbose == 1:
                 #print("Self iteration", self.iteration)
-                pbar.update(self.iteration)
+                pbar.update(iteration)
 
             (Z_ls, top_doc_ls, word_top_ls, logp_ls, mtrand_str_ls, 
              mtrand_keys_ls, mtrand_pos_ls, mtrand_has_gauss_ls, 
              mtrand_cached_gaussian_ls) = zip(*results)
             
-            mtrand_states = zip(mtrand_str_ls, mtrand_keys_ls, mtrand_pos_ls, 
+            self._mtrand_states = zip(mtrand_str_ls, mtrand_keys_ls, mtrand_pos_ls, 
                                 mtrand_has_gauss_ls, mtrand_cached_gaussian_ls)
 
             for t in xrange(len(results)):
@@ -313,9 +341,11 @@ class LdaCgsMulti(LdaCgsSeq):
                 stdout.flush()
                 print '%f' % lp
 
+            iteration += 1
             self.iteration += 1
 
-        pbar.finish()
+        if verbose == 1:
+            pbar.finish()
 
         p.close()
         self._move_globals_to_locals()
@@ -407,7 +437,8 @@ def demo_LdaCgsMulti(doc_len=500, V=100000, n_docs=100,
     print 'Number of processors:', n_proc
 
     c = random_corpus(n_docs*doc_len, V, doc_len, doc_len+1, seed=corpus_seed)
-    m = LdaCgsMulti(c, 'document', K=K)
-    m.train(n_iterations=n_iterations, n_proc=n_proc, seeds=model_seeds)
+    m = LdaCgsMulti(c, 'document', K=K, n_proc=n_proc, seeds=model_seeds)
+    m.train(n_iterations=n_iterations, verbose=2)
 
     return m
+

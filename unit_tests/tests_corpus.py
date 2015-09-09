@@ -49,7 +49,7 @@ class TestCorpus(unittest.TestCase):
         self.assertTrue(len(out.words)==4)
         self.assertTrue(len(out.words_int)==4)
 
-        out = align_corpora(Corpus([]), self.corpus)
+        out = align_corpora(Corpus([], remove_empty=False), self.corpus)
         self.assertTrue(len(out.corpus)==0)
         self.assertTrue(len(out.words)==0)
         self.assertTrue(len(out.words_int)==0)
@@ -122,7 +122,7 @@ class TestCorpus(unittest.TestCase):
             tmp = NamedTemporaryFile(delete=False, suffix='.npz')
             self.corpus.save(tmp.name)
             tmp.close()
-            c_reloaded = self.corpus.load(tmp.name)
+            c_reloaded = Corpus.load(tmp.name)
 
             self.assertTrue((self.corpus.corpus == c_reloaded.corpus).all())
             self.assertTrue((self.corpus.words == c_reloaded.words).all())

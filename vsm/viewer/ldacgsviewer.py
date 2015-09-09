@@ -60,7 +60,7 @@ class LdaCgsViewer(object):
         distributions).
 
         """
-        if self._phi==None:
+        if self._phi is None:
             self._phi = self.model.word_top / self.model.word_top.sum(0)
         return self._phi
 
@@ -72,7 +72,7 @@ class LdaCgsViewer(object):
         distributions.
 
         """
-        if self._theta==None:
+        if self._theta is None:
             self._theta =  self.model.top_doc / self.model.top_doc.sum(0)
         return self._theta
 
@@ -82,7 +82,7 @@ class LdaCgsViewer(object):
         """Returns the entropies of the columns of phi (i.e., topics)
 
         """
-        if self._H_phi==None:
+        if self._H_phi is None:
             self._H_phi = H(self.phi.T)
         return self._H_phi
 
@@ -92,7 +92,7 @@ class LdaCgsViewer(object):
         """Returns the entropies of the columns of theta.
 
         """
-        if self._H_theta==None:
+        if self._H_theta is None:
             self._H_theta = H(self.theta.T)
         return self._H_theta
 
@@ -152,11 +152,78 @@ class LdaCgsViewer(object):
         k_arr.subcol_headers = ['Index', 'Oscillation']
         k_arr.col_len = 10
         return k_arr
-
     
-    def topics(self, print_len=10, topic_indices=None, sort_by_entropy=False,
-               sort_by_oscillation=False, as_strings=True, 
-               compact_view=True, topic_labels=None):
+    def topic_jsds(self, print_len=10):
+        """Returns the partial N-way JSD of each topic, where N is the number of
+        documents in the model. This measure captures the extent to which an
+        individual topic is a reliable signal of a document's overall topic
+        distribution.
+        
+        Returns an array sorted by descending partial JSD.
+        """
+        topic_indices = np.arange(self.model.K)
+
+        doc_tops = self.theta.T
+        M = np.sum(doc_tops, axis=0) / len(doc_tops)
+        pjsd = np.sum(np.array([(D_i * np.log(D_i / M)) / len(doc_tops) 
+                                    for D_i in doc_tops]), axis=0)
+
+        k_arr = enum_sort(pjsd).view(LabeledColumn)
+        k_arr.col_header = 'Topic Partial JSD'
+        k_arr.subcol_headers = ['Index', 'pJSD']
+        k_arr.col_len = 10
+        return k_arr[::-1]
+
+    def _get_sort_header_topic_indices(self, sort=None, topic_indices=None):
+        """ 
+        Returns a tuple of (str, seq) consisting of the column header and sort
+        order for a given sort method.
+
+        :param sort: Topic sort function.
+        :type sort: string, values are "entropy", "oscillation", "index", "jsd",
+            "user" (default if topic_indices set), "index" (default)
+        
+        :param topic_indices: List of indices of topics to be
+            displayed. Default is all topics.
+        :type topic_indices: list of integers
+        """
+        if sort == 'entropy':
+            th = 'Topics Sorted by Entropy'
+            ent_sort = self.topic_entropies()['i']
+            if topic_indices is not None:
+                ti = set(topic_indices)
+                topic_indices = [k for k in ent_sort if k in ti]
+            else:
+                topic_indices = ent_sort
+        elif sort == 'oscillation':
+            th = 'Topics Sorted by Oscillation'
+            osc_sort = self.topic_oscillations()['i']
+            if topic_indices is not None:
+                ti = set(topic_indices)
+                topic_indices = [k for k in osc_sort if k in ti]
+            else:
+                topic_indices = osc_sort
+        elif sort == 'jsd':
+            th = 'Topics Sorted by Partial JSD'
+            jsd_sort = self.topic_jsds()['i']
+            if topic_indices is not None:
+                ti = set(topic_indices)
+                topic_indices = [k for k in jsd_sort if k in ti]
+            else:
+                topic_indices = jsd_sort
+
+        elif topic_indices is not None or sort == 'user':
+            sort = 'user'
+            th = 'Topics Sorted by User'
+        else:
+            sort = 'index'
+            th = 'Topics Sorted by Index' 
+            topic_indices = range(self.model.K)
+
+        return (th, np.array(topic_indices))
+    
+    def topics(self, topic_indices=None, sort=None, print_len=10, 
+               as_strings=True, compact_view=True, topic_labels=None):
         """
         Returns a list of topics estimated by the model. 
         Each topic is represented by a list of words and the corresponding 
@@ -166,11 +233,9 @@ class LdaCgsViewer(object):
             displayed. Default is all topics.
         :type topic_indices: list of integers
         
-        :param sort_by_entropy: Sorts topics by entropies. Default is False.
-        :type sort_by_entropy: boolean, optional
-        
-        :param sort_by_oscillation: Sorts topics by oscillations. Default is False.
-        :type sort_by_oscillation: boolean, optional
+        :param sort: Topic sort function.
+        :type sort: string, values are "entropy", "oscillation", "index", "jsd",
+            "user" (default if topic_indices set), "index" (default)
 
         :param print_len: Number of words shown for each topic. Default is 10.
         :type print_len: int, optional
@@ -191,40 +256,27 @@ class LdaCgsViewer(object):
         :returns: an instance of :class:`DataTable`.
             A structured array of topics.
         """
-        if sort_by_entropy:
-            th = 'Topics Sorted by Entropy'
-            ent_sort = self.topic_entropies()['i']
-            if not topic_indices==None:
-                ti = set(topic_indices)
-                topic_indices = [k for k in ent_sort if k in ti]
-            else:
-                topic_indices = ent_sort
-        elif sort_by_oscillation:
-            th = 'Topics Sorted by Oscillation'
-            osc_sort = self.topic_oscillations()['i']
-            if not topic_indices==None:
-                ti = set(topic_indices)
-                topic_indices = [k for k in osc_sort if k in ti]
-            else:
-                topic_indices = osc_sort
-        elif not topic_indices==None:
-            th = 'Topics Sorted by User'            
-        else:
-            th = 'Topics Sorted by Index' 
-            topic_indices = range(self.model.K)
+        if topic_indices is not None\
+            and (not hasattr(topic_indices, '__len__') or\
+                isinstance(topic_indices, (str, unicode))):
+            raise ValueError("Invalid value for topic_indices," + 
+                             "must be a list of integers")
+
+        th, topic_indices = self._get_sort_header_topic_indices(
+                                     sort,topic_indices=topic_indices)
 
         phi = self.phi[:,topic_indices]
-        
+
         if as_strings:
 	        k_arr = enum_matrix(phi.T, indices=self.corpus.words,
-                                field_name='word')
+                                    field_name='word')
         else:
             ind = [self.corpus.words_int[word] for word in self.corpus.words]
             k_arr = enum_matrix(phi.T, indices=ind, field_name='word')
        
         table = []
         for i,k in enumerate(topic_indices):
-            if topic_labels==None:
+            if topic_labels is None:
                 ch = 'Topic ' + str(k)
             else:
                 ch = topic_labels[i]
@@ -238,7 +290,7 @@ class LdaCgsViewer(object):
                      subcolhdr_compact=schc, subcolhdr_full=schf)
 
 
-    def doc_topics(self, doc_or_docs, sort_by_entropy=False, compact_view=False,
+    def doc_topics(self, doc_or_docs, compact_view=False,
                    aggregate=False, print_len=10, topic_labels=None):
         """
         Returns the distribution over topics for the given documents.
@@ -277,17 +329,6 @@ class LdaCgsViewer(object):
 
         docs, labels = zip(*[self._res_doc_type(d) for d in doc_or_docs])
 
-        if sort_by_entropy:
-            ent_sort = self.doc_entropies(as_strings=False)['i']
-            docs_, labels_ = [], []
-            for j in xrange(len(ent_sort)):
-                d = ent_sort[j]
-                if d in docs:
-                    i = docs.index(d)
-                    docs_.append(d)
-                    labels_.append(labels[i])
-            docs, labels = docs_, labels_
-        
         k_arr = enum_matrix(self.theta.T, indices=range(self.model.K), 
                             field_name='topic')
 
@@ -295,7 +336,7 @@ class LdaCgsViewer(object):
         
         table = []
         for i in xrange(len(docs)):
-            if topic_labels==None: 
+            if topic_labels is None: 
                 ch = 'Doc: ' + labels[i]
             else:
                 ch = topic_labels[i] 

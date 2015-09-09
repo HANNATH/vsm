@@ -134,6 +134,14 @@ class BaseCorpus(object):
 		if remove_empty:
 			self.remove_empty()
 
+    def __len__(self):
+        """
+        Returns the number of tokens in the corpus.
+
+        :See Also: `len(self.words)` for the number of unique tokens.
+        """
+
+        return len(self.corpus)
 
     def _gen_context_types(self, context_types):
         """
@@ -181,13 +189,14 @@ class BaseCorpus(object):
     
     def remove_empty(self):
         """
-        Removes empty tokenizations.
+        Removes empty tokenizations, if `Corpus` object is not empty.
         """	
-        for j, t in enumerate(self.context_types):
-            token_list = self.view_contexts(t)
-            
-            indices = np.array([ctx.size != 0 for ctx in token_list], dtype=np.bool)
-            self.context_data[j] = self.context_data[j][indices]
+        if self:
+            for j, t in enumerate(self.context_types):
+                token_list = self.view_contexts(t)
+                
+                indices = np.array([ctx.size != 0 for ctx in token_list], dtype=np.bool)
+                self.context_data[j] = self.context_data[j][indices]
 
 
     def view_metadata(self, ctx_type):
@@ -219,6 +228,8 @@ class BaseCorpus(object):
         :type query: dictionary-like
 
         :returns: The index of the metadata found in the query.
+        
+        :raises: KeyError
 
         :See Also: :class:`BaseCorpus`
         """
@@ -231,11 +242,13 @@ class BaseCorpus(object):
 
         n = np.count_nonzero(ind_set)
         if n == 0:
-            raise Exception('No token fits that description.')
+            raise KeyError('No token fits the description: ' +
+                ', '.join(['{q}:{l}'.format(q=k, l=v) 
+                                for k,v in query.iteritems()]))
         elif n > 1:
             msg = ('Multiple tokens fit that description:\n'
                    + str(tok[ind_set]))
-            raise Exception(msg)
+            raise KeyError(msg)
 
         return ind_set.nonzero()[0][0]
 
@@ -537,10 +550,10 @@ class Corpus(BaseCorpus):
         :See Also: :class:`Corpus`, :meth:`Corpus.save`, :meth:`numpy.load`
 
         """
-        if not file==None:
+        if not file is None:
             arrays_in = np.load(file)
 
-            c = Corpus([])
+            c = Corpus([], remove_empty=False)
             c.corpus = arrays_in['corpus']
             c.words = arrays_in['words']
             c.context_types = arrays_in['context_types'].tolist()
@@ -554,9 +567,9 @@ class Corpus(BaseCorpus):
 
             return c
 
-        if not corpus_dir==None:
+        if not corpus_dir is None:
 
-            c = Corpus([])
+            c = Corpus([], remove_empty=False)
 
             c.corpus = np.load(os.path.join(corpus_dir, corpus_file))
             c.words = np.load(os.path.join(corpus_dir, words_file))
@@ -678,7 +691,7 @@ def add_metadata(corpus, ctx_type, new_field, metadata):
 
 
 
-def align_corpora(old_corpus, new_corpus):
+def align_corpora(old_corpus, new_corpus, remove_empty=True):
     """Takes two Corpus objects `old_corpus` and `new_corpus` and returns
     a copy of `new_corpus` with the following modifications: (1) the
     word to integer mapping agrees with that of `old_corpus` and (2)
@@ -688,7 +701,8 @@ def align_corpora(old_corpus, new_corpus):
     """
     new_words = [w for w in new_corpus.words if w not in old_corpus.words]
     out = new_corpus.apply_stoplist(new_words)
-    out.remove_empty()
+    if remove_empty:
+        out.remove_empty()
 
     int_words = out.words
     words_int = old_corpus.words_int
