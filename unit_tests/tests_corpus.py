@@ -16,7 +16,8 @@ class TestCorpus(unittest.TestCase):
                 dtype=[('idx', '<i8'), ('doc', '|S4')])
 
         self.bc = BaseCorpus(corpus, context_data=[contextData],
-                                     context_types=['document'])
+                                     context_types=['document'],
+                                     remove_empty=True)
         
         text = ['I', 'came', 'I', 'saw', 'I', 'conquered']
         ctx_data = [np.array([(2, 'Veni'), (4, 'Vidi'), (6, 'Vici')],
@@ -41,6 +42,12 @@ class TestCorpus(unittest.TestCase):
         for i in xrange(len(even)):
             np.testing.assert_array_equal(even[i], even_expected[i])
 
+    def test_apply_stoplist(self):
+        stopped_corpus = self.corpus.apply_stoplist(['I'])
+        new_ctx = np.equal(stopped_corpus.context_data[0], np.array([(1,'Veni'), (2,'Vidi'), 
+                (3,'Vici')], dtype=[('idx', '<i8'), ('sent', '|S6')]))
+        self.assertTrue(new_ctx, msg=None)
+        self.assertItemsEqual(['I'], stopped_corpus.stopped_words)
 
     def test_align_corpora(self):
         

@@ -5,10 +5,21 @@ import numpy as np
 from vsm.structarr import arr_add_field
 from vsm.split import split_corpus
 
+__all__ = [ 'BaseCorpus', 'Corpus', 'add_metadata',
+            'align_corpora','binary_search' ]
 
-__all__ = [ 'BaseCorpus', 'Corpus', 'add_metadata', 'align_corpora' ]
+from bisect import bisect_left
+from datetime import datetime
 
-
+def binary_search(a, x, lo=0, hi=None):   # can't use a to specify default for hi
+    hi = hi if hi is not None else len(a) # hi defaults to len(a)   
+    pos = bisect_left(a,x,lo,hi)          # find insertion position
+    return (pos if pos != hi and a[pos] == x else -1) # don't walk off the end
+"""
+def binary_search_set(a,x):
+    pos = a.bisect_left(x)
+    return (pos if pos != len(a)  and a[pos] == x else -1) # don't walk off the end
+"""
 
 class BaseCorpus(object):
     """
@@ -42,13 +53,19 @@ class BaseCorpus(object):
         'dogs'. Default is `None`.
     :type context_data:  list with 1-D array-like elements, optional
 
-    :param context_types: Each element in `context_types` is a type of a i
+    :param context_types: Each element in `context_types` is a type of a
         tokenization in `context_data`.
     :type context_types: array-like, optional
 
-    :param remove_empty: If True, empty tokenizations are removed. Default it
+    :param remove_empty: If True, empty tokenizations are removed. Default is
         `True`.
     :type remove_empty: boolean, optional
+
+    :param to_array: If True, converts all values to a numpy array. If False,
+        data is left in input format. False is used when `BaseCorpus` is used
+        in a constructor for an advanced tokenization like `Corpus`. Default is
+        `True`.
+    :type to_array: boolean, optional
 
     :attributes: 
         * **corpus**  (1-dimensional array)
@@ -117,22 +134,30 @@ class BaseCorpus(object):
                  dtype=None,
                  context_types=[],
                  context_data=[],
-                 remove_empty=True):
+                 remove_empty=False,
+                 to_array=True):
 
-		self.corpus = np.asarray(corpus, dtype=dtype)
-		self.dtype = self.corpus.dtype
+        if to_array:
+            self.corpus = np.asarray(corpus, dtype=dtype)
+            self.dtype = self.corpus.dtype
+        else:
+            self.corpus = corpus[:]
+            self.dtype = dtype
 
-		self.words = np.unique(self.corpus)
+        # Since np.unique attempts to make a whole contiguous copy of the
+        # corpus array, we instead use a sorted set and cast to a np array
+        # equivalent to self.words = np.unique(self.corpus)
+        self.words = np.asarray(sorted(set(self.corpus)), dtype=dtype)
 
-		self.context_data = []
-		for t in context_data:
-			if self._validate_indices(t['idx']):
-				self.context_data.append(t)
-		
-		self._gen_context_types(context_types)
+        self.context_data = []
+        for t in context_data:
+            if self._validate_indices(t['idx']):
+                self.context_data.append(t)
+        
+        self._gen_context_types(context_types)
 
-		if remove_empty:
-			self.remove_empty()
+        if remove_empty:
+            self.remove_empty()
 
     def __len__(self):
         """
@@ -177,10 +202,10 @@ class BaseCorpus(object):
 
                 raise Exception(msg)
                     
-            if j > self.corpus.shape[0]:
+            if j > len(self.corpus):
                 msg = 'invalid tokenization'\
                       ' : ' + str(j) + ' is out of range ('\
-                      + str(self.corpus.shape[0]) + ')'
+                      + str(len(self.corpus)) + ')'
                 
                 raise Exception(msg)
 
@@ -190,7 +215,7 @@ class BaseCorpus(object):
     def remove_empty(self):
         """
         Removes empty tokenizations, if `Corpus` object is not empty.
-        """	
+        """    
         if self:
             for j, t in enumerate(self.context_types):
                 token_list = self.view_contexts(t)
@@ -218,7 +243,7 @@ class BaseCorpus(object):
 
     def meta_int(self, ctx_type, query):
         """
-	    Returns the index of the metadata found in the query.
+        Returns the index of the metadata found in the query.
 
         :param ctx_type: The type of a tokenization.
         :type ctx_type: string-like
@@ -238,7 +263,11 @@ class BaseCorpus(object):
 
         ind_set = np.ones(tok.size, dtype=bool)
         for k,v in query.iteritems():
-            ind_set = np.logical_and(ind_set, (tok[k] == v))
+            try:
+                ind_set = np.logical_and(ind_set, (tok[k] == v))
+            except UnicodeDecodeError:
+                v = v.decode('utf-8')
+                ind_set = np.logical_and(ind_set, (tok[k] == v))
 
         n = np.count_nonzero(ind_set)
         if n == 0:
@@ -255,7 +284,7 @@ class BaseCorpus(object):
 
     def get_metadatum(self, ctx_type, query, field):
         """
-	    Returns the metadatum corresponding to the query and the field.
+        Returns the metadatum corresponding to the query and the field.
 
         :param ctx_type: The type of a tokenization.
         :type ctx_type: string-like
@@ -264,7 +293,7 @@ class BaseCorpus(object):
             in metadata.
         :type query: dictionary-like
         
-	    :param field: Field of the metadata
+        :param field: Field of the metadata
         :type field: string
 
         :returns: The metadatum corresponding to the query and the field.
@@ -305,7 +334,7 @@ class BaseCorpus(object):
             slices.append(slice(0, indices[0]))
             for i in xrange(len(indices) - 1):
                 slices.append(slice(indices[i], indices[i+1]))
-            return slices	    
+            return slices        
             
         return split_corpus(self.corpus, indices)
 
@@ -410,12 +439,12 @@ class Corpus(BaseCorpus):
      array([0, 1], dtype=int32)]
 
     >>> c.view_contexts('sentences', as_strings=True)
-	[array(['I', 'came'], 
-	      dtype='|S9'),
-	 array(['I', 'saw'], 
-	      dtype='|S9'),
-	 array(['I', 'conquered'], 
-	      dtype='|S9')]
+    [array(['I', 'came'], 
+          dtype='|S9'),
+     array(['I', 'saw'], 
+          dtype='|S9'),
+     array(['I', 'conquered'], 
+          dtype='|S9')]
 
     >>> c.view_metadata('sentences')[1]['sent_label']
     'Vidi'
@@ -426,7 +455,6 @@ class Corpus(BaseCorpus):
       dtype='|S9')
 
     """
-    
     def __init__(self,
                  corpus,
                  context_types=[],
@@ -437,15 +465,23 @@ class Corpus(BaseCorpus):
                                      context_types=context_types,
                                      context_data=context_data,
                                      dtype=np.unicode_,
-				     remove_empty=remove_empty)
+                                     remove_empty=False,
+                                     to_array=False)
 
         self._set_words_int()
 
         # Integer encoding of a string-type corpus
         self.dtype = np.int32
-        self.corpus = np.asarray([self.words_int[word]
-                                  for word in self.corpus],
+        self.corpus = np.asarray([self.words_int[unicode(word)] 
+                                  for word in self.corpus 
+                                      if unicode(word) not in ['\x00']
+                                      ],
                                  dtype=self.dtype)
+
+        self.stopped_words = set()
+
+        if remove_empty:
+            self.remove_empty()
 
 
 
@@ -476,7 +512,7 @@ class Corpus(BaseCorpus):
         :returns: A tokenized view of `corpus`.
 
         :See Also: :class:`Corpus`, :class:`BaseCorpus`
-        """	 
+        """     
         if as_strings:
             token_list = super(Corpus, self).view_contexts(ctx_type)
             token_list_ = []
@@ -489,8 +525,8 @@ class Corpus(BaseCorpus):
         return super(Corpus, self).view_contexts(ctx_type,
                                                  as_slices=as_slices,
                                                  as_indices=as_indices)
-	
-	
+    
+    
     def tolist(self, context_type, as_strings=False):
         """
         Returns Corpus object as a list of lists of either integers or
@@ -557,6 +593,10 @@ class Corpus(BaseCorpus):
             c.corpus = arrays_in['corpus']
             c.words = arrays_in['words']
             c.context_types = arrays_in['context_types'].tolist()
+            try:
+                c.stopped_words = set(arrays_in['stopped_words'].tolist())
+            except:
+                c.stopped_words = set()
 
             c.context_data = list()
             for n in c.context_types:
@@ -597,6 +637,7 @@ class Corpus(BaseCorpus):
         arrays_out['corpus'] = self.corpus
         arrays_out['words'] = self.words
         arrays_out['context_types'] = np.asarray(self.context_types)
+        arrays_out['stopped_words'] = np.asarray(self.stopped_words)
 
         for i,t in enumerate(self.context_data):
             key = 'context_data_' + self.context_types[i]
@@ -604,6 +645,113 @@ class Corpus(BaseCorpus):
 
         np.savez(file, **arrays_out)
 
+
+    def in_place_stoplist(self, stoplist=None, freq=0):
+        """ 
+        Changes a Corpus object with words in the stoplist removed and with 
+        words of frequency <= `freq` removed.
+        
+        :param stoplist: The list of words to be removed.
+        :type stoplist: list
+
+        :param freq: A threshold where words of frequency <= 'freq' are
+            removed. Default is 0.
+        :type freq: integer, optional
+            
+        :returns: Copy of corpus with words in the stoplist and words
+            of frequnecy <= 'freq' removed.
+
+        :See Also: :class:`Corpus`
+        """
+        from sortedcontainers import SortedSet, SortedList
+        stop = SortedSet()
+
+        if stoplist:
+            for t in stoplist:
+                if t in self.words_int:
+                    stop.add(self.words_int[t])
+
+        if freq:
+            cfs = np.bincount(self.corpus)
+            freq_stop = np.where(cfs <= freq)[0]
+            stop.update(freq_stop)
+
+
+        if not stop:
+            # print 'Stop list is empty.'
+            return self
+    
+        # print 'Removing stop words', datetime.now()
+        f = np.vectorize(stop.__contains__)
+
+        # print 'Rebuilding context data', datetime.now()
+        context_data = []
+
+        BASE = len(self.context_data) - 1
+        # gathering list of new indicies from narrowest tokenization
+        def find_new_indexes(INTO, BASE=-1):
+            locs = np.where(np.in1d(self.context_data[BASE]['idx'], self.context_data[INTO]['idx']))[0]
+
+            # creating a list of lcoations that are non-identical
+            new_locs = np.array([loc for i, loc in enumerate(locs)
+                                     if i+1 == len(locs) or self.context_data[BASE]['idx'][locs[i]] != self.context_data[BASE]['idx'][locs[i+1]]])
+
+            # creating a search for locations that ARE identical
+            idxs = np.insert(self.context_data[INTO]['idx'], [0,-1], [-1,-1])
+            same_spots = np.where(np.equal(idxs[:-1], idxs[1:]))[0]
+
+            # readding the identical locations
+            really_new_locs = np.insert(new_locs, same_spots, new_locs[same_spots-1])
+            return really_new_locs
+
+        # Calculate new base tokens
+        tokens = self.view_contexts(self.context_types[BASE])
+        new_corpus = []
+        spans = []
+        for t in tokens:
+            new_t = t[np.logical_not(f(t))] if t.size else t
+            
+            # TODO: append to new_corpus as well
+            spans.append(new_t.size if new_t.size else 0)
+            if new_t.size:
+                new_corpus.append(new_t)
+        new_base = self.context_data[BASE].copy()
+        new_base['idx'] = np.cumsum(spans)
+
+        context_data = []
+        # calculate new tokenizations for every context_type
+        for i in xrange(len(self.context_data)):
+            if i == BASE:
+                context_data.append(new_base)
+            else:
+                context = self.context_data[i].copy()
+                context['idx'] = new_base['idx'][find_new_indexes(i, BASE)]
+                context_data.append(context)
+
+        del self.context_data
+        self.context_data = context_data
+
+        # print 'Rebuilding corpus and updating stop words', datetime.now()
+        self.corpus = np.concatenate(new_corpus)
+        #self.corpus[f(self.corpus)]
+        self.stopped_words.update(self.words[stop])
+
+        #print 'adjusting words list', datetime.now()
+        new_words = np.delete(self.words, stop)
+
+        # print 'rebuilding word dictionary', datetime.now()
+        new_words_int = dict((word,i) for i, word in enumerate(new_words)) 
+        old_to_new =  dict((self.words_int[word],i) for i, word in enumerate(new_words)) 
+
+        #print "remapping corpus", datetime.now()
+        f = np.vectorize(old_to_new.__getitem__)
+        self.corpus[:] = f(self.corpus)
+
+        #print 'storing new word dicts', datetime.now()
+        self.words = new_words
+        self.words_int = new_words_int
+
+        return self
 
     def apply_stoplist(self, stoplist=[], freq=0):
         """ 
@@ -622,6 +770,8 @@ class Corpus(BaseCorpus):
 
         :See Also: :class:`Corpus`
         """
+        print "Using apply_stoplist for some reason"
+        stoplist = set(stoplist)
         if freq:
             #TODO: Use the TF model instead
 
@@ -634,12 +784,15 @@ class Corpus(BaseCorpus):
             # print 'Selecting words of frequency <=', freq
             freq_stop = np.arange(cfs.size)[(cfs <= freq)]
             stop = set(freq_stop)
+            for word in stop:
+                stoplist.add(self.words[word])
         else:
             stop = set()
 
+        # filter stoplist
+        stoplist = [t for t in stoplist if t in self.words]
         for t in stoplist:
-            if t in self.words:
-                stop.add(self.words_int[t])
+            stop.add(self.words_int[t])
 
         if not stop:
             # print 'Stop list is empty.'
@@ -660,7 +813,11 @@ class Corpus(BaseCorpus):
             tok['idx'] = np.cumsum(spans)
             context_data.append(tok)
 
-        return Corpus(corpus, context_data=context_data, context_types=self.context_types)
+        c = Corpus(corpus, context_data=context_data, context_types=self.context_types)
+        if self.stopped_words:
+            c.stopped_words.update(self.stopped_words)
+        c.stopped_words.update(stoplist)
+        return c
 
 
 def add_metadata(corpus, ctx_type, new_field, metadata):

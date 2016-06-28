@@ -10,14 +10,14 @@ class TestCorpusUtil(unittest.TestCase):
         
         tsent = ['foo-foo',',','3','foo','bars','bar_foo','2to1','.']
         out = strip_punc(tsent)
-        self.assertEqual(out, ['foo-foo','3','foo','bars','bar_foo','2to1'])
+        self.assertEqual(out, ['foofoo','3','foo','bars','barfoo','2to1'])
 
 
     def test_rem_num(self):
  
         tsent = ['foo-foo',',','3','foo','bars','2-parts','2-to-1','3words','.']
         out = rem_num(tsent)
-        self.assertEqual(out, ['foo-foo',',','3','foo','bars','2-parts','3words','.'])
+        self.assertEqual(out, ['foo-foo',',','foo','bars','-parts','-to-','words','.'])
 
     def test_rehyph(self):
         
@@ -42,11 +42,12 @@ class TestCorpusUtil(unittest.TestCase):
         from vsm.corpus.util.corpusbuilders import random_corpus, corpus_fromlist
 
         c = random_corpus(1000, 50, 0, 20, context_type='sentence', metadata=True)
-        new_c = apply_stoplist(c, nltk_stop=False, add_stop=['0','1'], freq=0)
+        new_c = apply_stoplist(c, nltk_stop=False, add_stop=['0','1'], 
+                               freq=0, in_place=False)
 
         li = [[],['he','said'],['he','said','bar'],['bar','ate'],['I','foo']]
         wc = corpus_fromlist(li, context_type='sentence')
-        new_wc = apply_stoplist(wc, nltk_stop=True, freq=1)
+        new_wc = apply_stoplist(wc, nltk_stop=True, freq=1, in_place=False)
         
         self.assertTrue('0' in c.words)
         self.assertTrue('1' in c.words)
