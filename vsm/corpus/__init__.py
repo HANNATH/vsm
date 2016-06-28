@@ -2,7 +2,6 @@
 [General documentation about the :mod:`corpus` submodule]
 """
 
-
 from base import *
 import base
 

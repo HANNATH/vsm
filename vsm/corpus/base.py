@@ -1,3 +1,5 @@
+from bisect import bisect_left
+from datetime import datetime
 import os
 
 import numpy as np
@@ -5,21 +7,30 @@ import numpy as np
 from vsm.structarr import arr_add_field
 from vsm.split import split_corpus
 
-__all__ = [ 'BaseCorpus', 'Corpus', 'add_metadata',
-            'align_corpora','binary_search' ]
+__all__ = ['BaseCorpus', 'Corpus', 'add_metadata',
+           'align_corpora', 'binary_search']
 
-from bisect import bisect_left
-from datetime import datetime
 
-def binary_search(a, x, lo=0, hi=None):   # can't use a to specify default for hi
-    hi = hi if hi is not None else len(a) # hi defaults to len(a)   
-    pos = bisect_left(a,x,lo,hi)          # find insertion position
-    return (pos if pos != hi and a[pos] == x else -1) # don't walk off the end
-"""
-def binary_search_set(a,x):
-    pos = a.bisect_left(x)
-    return (pos if pos != len(a)  and a[pos] == x else -1) # don't walk off the end
-"""
+def binary_search(a, x, lo=0, hi=None):
+    """
+    Function for performing binary_search. Returns -1 if not in list.
+
+    :param list a: List to search
+    :param object x: Object to insert
+    :param int lo: starting position for bisect_left
+    :param int hi: end position for bisect_left
+
+    :return: position or -1 if not in list.
+    """
+
+    # hi defaults to len(a)
+    hi = hi if hi is not None else len(a)
+
+    # find insertion position
+    pos = bisect_left(a, x, lo, hi)
+    # don't walk off the end
+    return (pos if pos != hi and a[pos] == x else -1)
+
 
 class BaseCorpus(object):
     """
@@ -41,15 +52,15 @@ class BaseCorpus(object):
         data-type is determined by `numpy.asarray`. Default is `None`.
     :type dtype: data-type, optional
 
-    :param context_data: Each element in `context_data` is an array 
-        containing the indices marking the context boundaries. 
-        An element in `context_data` is intended for use as a value for 
-        the `indices_or_sections` parameter in `numpy.split`. 
+    :param context_data: Each element in `context_data` is an array
+        containing the indices marking the context boundaries.
+        An element in `context_data` is intended for use as a value for
+        the `indices_or_sections` parameter in `numpy.split`.
         Elements of `context_data` may also be 1-D arrays whose elements
-        are pairs, where the first element is a context boundary and 
+        are pairs, where the first element is a context boundary and
         the second element is metadata associated with that context preceding
-        that boundary. For example, (250, 'dogs') might indicate that 
-        the 'article' context ending at the 250th word of the corpus is named 
+        that boundary. For example, (250, 'dogs') might indicate that
+        the 'article' context ending at the 250th word of the corpus is named
         'dogs'. Default is `None`.
     :type context_data:  list with 1-D array-like elements, optional
 
@@ -67,7 +78,7 @@ class BaseCorpus(object):
         `True`.
     :type to_array: boolean, optional
 
-    :attributes: 
+    :attributes:
         * **corpus**  (1-dimensional array)
             Stores the value of the `corpus` parameter after it has been cast
             to an array of data-type `dtype` (if provided).
@@ -76,7 +87,7 @@ class BaseCorpus(object):
         * **context_types**  (1-dimensional array-like)
         * **context_data**   (list of 1-D array-like)
 
-    :methods: 
+    :methods:
         * **meta_int**
             Takes a type of tokenization and a query and returns the index of
             the metadata found in the query.
@@ -105,11 +116,12 @@ class BaseCorpus(object):
                         dtype=[('idx', '<i8'), ('sent_label', '|S16')])]
 
     >>> from vsm.corpus import BaseCorpus
-    >>> c = BaseCorpus(corpus, context_types=context_types, context_data=context_data)
+    >>> c = BaseCorpus(corpus, context_types=context_types,
+                       context_data=context_data)
     >>> c.corpus
     array(['the', 'dog', 'chased', 'the', 'cat', 'the', 'cat',
            'ran', 'away'], dtype='|S6')
-           
+
     >>> c.words
     array(['ran', 'away', 'chased', 'dog', 'cat', 'the'],
           dtype='|S6')
@@ -117,7 +129,8 @@ class BaseCorpus(object):
     >>> c.meta_int('sentences',{'sent_label': 'intransitive'})
     1
 
-    >>> b.get_metadatum('sentences', {'sent_label': 'intransitive'}, 'sent_label') 
+    >>> b.get_metadatum('sentences', {'sent_label': 'intransitive'},
+                        'sent_label')
     'intransitive'
 
     >>> c.view_contexts('sentences')
@@ -129,6 +142,7 @@ class BaseCorpus(object):
     >>> c.view_metadata('sentences')[0]['sent_label']
     'transitive'
     """
+
     def __init__(self,
                  corpus,
                  dtype=None,
@@ -153,7 +167,7 @@ class BaseCorpus(object):
         for t in context_data:
             if self._validate_indices(t['idx']):
                 self.context_data.append(t)
-        
+
         self._gen_context_types(context_types)
 
         if remove_empty:
@@ -179,14 +193,13 @@ class BaseCorpus(object):
 
         self.context_types = context_types
 
-
     def _validate_indices(self, indices):
         """
         Checks for invalid tokenizations. Specifically, checks to see
         that the list of indices are sorted and are in range. Ignores
         empty tokens.
 
-        :param indices: 
+        :param indices:
         :type indices : 1-D integer array-like
 
         :returns: `True` if the indices are validated
@@ -201,28 +214,27 @@ class BaseCorpus(object):
                       ' ctx ' + str(j) + ' and ' + str(indices[i + 1])
 
                 raise Exception(msg)
-                    
+
             if j > len(self.corpus):
                 msg = 'invalid tokenization'\
                       ' : ' + str(j) + ' is out of range ('\
                       + str(len(self.corpus)) + ')'
-                
+
                 raise Exception(msg)
 
         return True
 
-    
     def remove_empty(self):
         """
         Removes empty tokenizations, if `Corpus` object is not empty.
-        """    
+        """
         if self:
             for j, t in enumerate(self.context_types):
                 token_list = self.view_contexts(t)
-                
-                indices = np.array([ctx.size != 0 for ctx in token_list], dtype=np.bool)
-                self.context_data[j] = self.context_data[j][indices]
 
+                indices = np.array(
+                    [ctx.size != 0 for ctx in token_list], dtype=np.bool)
+                self.context_data[j] = self.context_data[j][indices]
 
     def view_metadata(self, ctx_type):
         """
@@ -240,20 +252,19 @@ class BaseCorpus(object):
         i = self.context_types.index(ctx_type)
         return self.context_data[i]
 
-
     def meta_int(self, ctx_type, query):
         """
         Returns the index of the metadata found in the query.
 
         :param ctx_type: The type of a tokenization.
         :type ctx_type: string-like
-        
+
         :param query: Dictionary with a key, value being a field, label
             in metadata.
         :type query: dictionary-like
 
         :returns: The index of the metadata found in the query.
-        
+
         :raises: KeyError
 
         :See Also: :class:`BaseCorpus`
@@ -262,7 +273,7 @@ class BaseCorpus(object):
         tok = self.view_metadata(ctx_type)
 
         ind_set = np.ones(tok.size, dtype=bool)
-        for k,v in query.iteritems():
+        for k, v in query.iteritems():
             try:
                 ind_set = np.logical_and(ind_set, (tok[k] == v))
             except UnicodeDecodeError:
@@ -272,8 +283,8 @@ class BaseCorpus(object):
         n = np.count_nonzero(ind_set)
         if n == 0:
             raise KeyError('No token fits the description: ' +
-                ', '.join(['{q}:{l}'.format(q=k, l=v) 
-                                for k,v in query.iteritems()]))
+                           ', '.join(['{q}:{l}'.format(q=k, l=v)
+                                      for k, v in query.iteritems()]))
         elif n > 1:
             msg = ('Multiple tokens fit that description:\n'
                    + str(tok[ind_set]))
@@ -281,18 +292,17 @@ class BaseCorpus(object):
 
         return ind_set.nonzero()[0][0]
 
-
     def get_metadatum(self, ctx_type, query, field):
         """
         Returns the metadatum corresponding to the query and the field.
 
         :param ctx_type: The type of a tokenization.
         :type ctx_type: string-like
-        
+
         :param query: Dictionary with a key, value being a field, label
             in metadata.
         :type query: dictionary-like
-        
+
         :param field: Field of the metadata
         :type field: string
 
@@ -303,8 +313,6 @@ class BaseCorpus(object):
         i = self.meta_int(ctx_type, query)
         return self.view_metadata(ctx_type)[i][field]
 
-
-
     def view_contexts(self, ctx_type, as_slices=False, as_indices=False):
         """
         Displays a tokenization of the corpus.
@@ -312,7 +320,7 @@ class BaseCorpus(object):
         :param ctx_type: The type of a tokenization.
         :type ctx_type: string-like
 
-        :param as_slices: If True, a list of slices corresponding to 
+        :param as_slices: If True, a list of slices corresponding to
             'ctx_type' is returned. Otherwise, integer representations
             are returned. Default is `False`.
         :type as_slices: Boolean, optional
@@ -325,19 +333,18 @@ class BaseCorpus(object):
 
         if as_indices:
             return indices
-        
+
         if as_slices:
             if len(indices) == 0:
                 return [slice(0, 0)]
-                
+
             slices = []
             slices.append(slice(0, indices[0]))
             for i in xrange(len(indices) - 1):
-                slices.append(slice(indices[i], indices[i+1]))
-            return slices        
-            
-        return split_corpus(self.corpus, indices)
+                slices.append(slice(indices[i], indices[i + 1]))
+            return slices
 
+        return split_corpus(self.corpus, indices)
 
     def tolist(self, context_type):
         """
@@ -346,7 +353,6 @@ class BaseCorpus(object):
         return self.view_contexts(context_type)
 
 
-    
 class Corpus(BaseCorpus):
     """
     The goal of the Corpus class is to provide an efficient representation\
@@ -365,54 +371,56 @@ class Corpus(BaseCorpus):
         atomic words.
     :type corpus: array-like
 
-    :param context_data: Each element in `context_data` is an array containing 
-        the indices marking the token boundaries. An element in `context_data` is
-        intended for use as a value for the `indices_or_sections`
-        parameter in `numpy.split`. Elements of `context_data` may also be
-        1-D arrays whose elements are pairs, where the first element
-        is a context boundary and the second element is metadata
-        associated with that context preceding that boundary. For
-        example, (250, 'dogs') might indicate that the 'article' context
-        ending at the 250th word of the corpus is named 'dogs'.
-        Default is `None`.
-    :type context_data: list-like with 1-D integer array-like elements, optional
-    
-    :param context_types: Each element in `context_types` is a type of a context
-        in `context_data`.
+    :param context_data: Each element in `context_data` is an array
+        containing the indices marking the token boundaries. An element
+        in `context_data` is intended for use as a value for the
+        `indices_or_sections` parameter in `numpy.split`. Elements of
+        `context_data` may also be 1-D arrays whose elements are pairs,
+        where the first element is a context boundary and the second
+        element is metadata associated with that context preceding that
+        boundary. For example, (250, 'dogs') might indicate that the
+        'article' context ending at the 250th word of the corpus is
+        named 'dogs'. Default is `None`.
+    :type context_data: list-like with 1-D integer array-like elements,
+        optional
+
+    :param context_types: Each element in `context_types` is a type
+        of a context in `context_data`.
     :type context_types: array-like, optional
 
-    :attributes: 
+    :attributes:
         * **corpus** (1-D 32-bit integer array)
-            corpus is the integer representation of the input string array-like
-            value of the corpus parameter
+            corpus is the integer representation of the input string
+            array-like value of the corpus parameter
         * **words** (1-D string array)
-            The indexed set of strings occurring in corpus. It is a string-typed array.
+            The indexed set of strings occurring in corpus. It is a
+            string-typed array.
         * **words_in** (1-D 32-bit integer dictionary)
-            A dictionary whose keys are `words` and whose values are their 
-            corresponding integers (i.e., indices in `words`).
-        
+            A dictionary whose keys are `words` and whose values are
+            their corresponding integers (i.e., indices in `words`).
+
     :methods:
         * **view_metadata**
             Takes a type of tokenization and returns a view of the metadata
             of the tokenization.
         * **view_contexts**
-            Takes a type of tokenization and returns a view of the corpus tokenized
-            accordingly. The optional parameter `strings` takes a boolean value: 
-            True to view string representations of words; False to view integer 
-            representations of words. Default is `False`.
+            Takes a type of tokenization and returns a view of the corpus
+            tokenized accordingly. The optional parameter `strings` takes
+            a boolean value: True to view string representations of words;
+            False to view integer representations of words. Default is `False`.
         * **save**
-            Takes a filename and saves the data contained in a Corpus object to 
-            a `npy` file using `numpy.savez`.
+            Takes a filename and saves the data contained in a Corpus object
+            to a `npy` file using `numpy.savez`.
         * **load**
             Static method. Takes a filename, loads the file data into a Corpus
             object and returns the object.
         * **apply_stoplist**
-            Takes a list of stopwords and returns a copy of the corpus with 
+            Takes a list of stopwords and returns a copy of the corpus with
             the stopwords removed.
         * **tolist**
-            Returns Corpus object as a list of lists of either integers or strings, 
-            according to `as_strings`.
-        
+            Returns Corpus object as a list of lists of either integers or
+            strings, according to `as_strings`.
+
     :See Also: :class:`BaseCorpus`
 
     **Examples**
@@ -423,10 +431,11 @@ class Corpus(BaseCorpus):
                             dtype=[('idx', '<i8'), ('sent_label', '|S6')])]
 
     >>> from vsm.corpus import Corpus
-    >>> c = Corpus(text, context_types=context_types, context_data=context_data)
+    >>> c = Corpus(text, context_types=context_types,
+                   context_data=context_data)
     >>> c.corpus
     array([0, 1, 0, 2, 0, 3], dtype=int32)
-    
+
     >>> c.words
     array(['I', 'came', 'saw', 'conquered'],
           dtype='|S9')
@@ -439,22 +448,23 @@ class Corpus(BaseCorpus):
      array([0, 1], dtype=int32)]
 
     >>> c.view_contexts('sentences', as_strings=True)
-    [array(['I', 'came'], 
+    [array(['I', 'came'],
           dtype='|S9'),
-     array(['I', 'saw'], 
+     array(['I', 'saw'],
           dtype='|S9'),
-     array(['I', 'conquered'], 
+     array(['I', 'conquered'],
           dtype='|S9')]
 
     >>> c.view_metadata('sentences')[1]['sent_label']
     'Vidi'
-    
+
     >>> c = c.apply_stoplist(['saw'])
     >>> c.words
-    array(['I', 'came', 'conquered'], 
+    array(['I', 'came', 'conquered'],
       dtype='|S9')
 
     """
+
     def __init__(self,
                  corpus,
                  context_types=[],
@@ -472,10 +482,10 @@ class Corpus(BaseCorpus):
 
         # Integer encoding of a string-type corpus
         self.dtype = np.int32
-        self.corpus = np.asarray([self.words_int[unicode(word)] 
-                                  for word in self.corpus 
-                                      if unicode(word) not in ['\x00']
-                                      ],
+        self.corpus = np.asarray([self.words_int[unicode(word)]
+                                  for word in self.corpus
+                                  if unicode(word) not in ['\x00']
+                                  ],
                                  dtype=self.dtype)
 
         self.stopped_words = set()
@@ -483,25 +493,22 @@ class Corpus(BaseCorpus):
         if remove_empty:
             self.remove_empty()
 
-
-
     def _set_words_int(self):
         """
         Mapping of words to their integer representations.
         """
-        self.words_int = dict((t,i) for i,t in enumerate(self.words))
+        self.words_int = dict((t, i) for i, t in enumerate(self.words))
 
-
-    def view_contexts(self, ctx_type, as_strings=False, as_slices=False, as_indices=False):
+    def view_contexts(self, ctx_type, as_strings=False, as_slices=False,
+                      as_indices=False):
         """
         Displays a tokenization of the corpus.
 
         :param ctx_type: The type of a tokenization.
         :type ctx_type: string-like
 
-        :param as_strings: If True, string representations of words are returned.
-            Otherwise, integer representations are returned. Default
-            is `False`.
+        :param as_strings: If True, return string representations of words.
+            If False, return integer representations. Default is `False`.
         :type as_strings: Boolean, optional
 
         :param as_slices: If True, a list of slices corresponding to 'ctx_type'
@@ -512,7 +519,7 @@ class Corpus(BaseCorpus):
         :returns: A tokenized view of `corpus`.
 
         :See Also: :class:`Corpus`, :class:`BaseCorpus`
-        """     
+        """
         if as_strings:
             token_list = super(Corpus, self).view_contexts(ctx_type)
             token_list_ = []
@@ -525,8 +532,7 @@ class Corpus(BaseCorpus):
         return super(Corpus, self).view_contexts(ctx_type,
                                                  as_slices=as_slices,
                                                  as_indices=as_indices)
-    
-    
+
     def tolist(self, context_type, as_strings=False):
         """
         Returns Corpus object as a list of lists of either integers or
@@ -535,24 +541,22 @@ class Corpus(BaseCorpus):
         :param context_type: The type of tokenization.
         :type context_type: string
 
-        :param as_strings: If True, string representations of words are returned.
-            Otherwise, integer representations are returned. Default
-            is `False`.
+        :param as_strings: If True, return string representations of words.
+            If false, return integer representations. Default is `False`.
         :type as_strings: Boolean, optional
-        
+
         :returns: List of lists
         """
         ls = self.view_contexts(context_type, as_strings=as_strings)
         return [arr.tolist() for arr in ls]
 
-    
     @staticmethod
     def load(file=None, corpus_dir=None,
              corpus_file='corpus.npy',
              words_file='words.npy',
              metadata_file='metadata.npy'):
-        """Loads data into a Corpus object. 
-        
+        """Loads data into a Corpus object.
+
         :param file: The file to read. See `numpy.load` for further
             details. Assumes file has been constructed as by
             `Corpus.save`. This option is exclusive of `corpus_dir`.
@@ -568,25 +572,25 @@ class Corpus(BaseCorpus):
         corpus data, stored as a numpy array of integers in an `npy`
         file.
         :type corpus_file: string or file object
-        
+
         :param words_file: File under `corpus_dir` containing the
         corpus vocabulary, stored as a numpy array of strings in an
-        `npy` file.  
+        `npy` file.
         :type words_file: string or file object
-        
+
         :param metadata_file: File under `corpus_dir` containing the
         corpus metadata, stored as a numpy stuctured array in an `npy`
         file. Note that this structured array should contain a file
         `idx` which stores the integer indices marking the document
         boundaries.
         :type corpus_file: string or file object
-        
+
         :returns: A Corpus object.
 
         :See Also: :class:`Corpus`, :meth:`Corpus.save`, :meth:`numpy.load`
 
         """
-        if not file is None:
+        if file is not None:
             arrays_in = np.load(file)
 
             c = Corpus([], remove_empty=False)
@@ -607,27 +611,26 @@ class Corpus(BaseCorpus):
 
             return c
 
-        if not corpus_dir is None:
+        if corpus_dir is not None:
 
             c = Corpus([], remove_empty=False)
 
             c.corpus = np.load(os.path.join(corpus_dir, corpus_file))
             c.words = np.load(os.path.join(corpus_dir, words_file))
             c._set_words_int()
-            c.context_types = [ 'document' ]
-            c.context_data = [ np.load(os.path.join(corpus_dir, metadata_file)) ]
+            c.context_types = ['document']
+            c.context_data = [np.load(os.path.join(corpus_dir, metadata_file))]
 
             return c
-
 
     def save(self, file):
         """
         Saves data from a Corpus object as an `npz` file.
-        
+
         :param file: Designates the file to which to save data. See
             `numpy.savez` for further details.
         :type file: str-like or file-like object
-            
+
         :returns: None
 
         :See Also: :class:`Corpus`, :meth:`Corpus.load`, :meth:`np.savez`
@@ -639,25 +642,24 @@ class Corpus(BaseCorpus):
         arrays_out['context_types'] = np.asarray(self.context_types)
         arrays_out['stopped_words'] = np.asarray(self.stopped_words)
 
-        for i,t in enumerate(self.context_data):
+        for i, t in enumerate(self.context_data):
             key = 'context_data_' + self.context_types[i]
             arrays_out[key] = t
 
         np.savez(file, **arrays_out)
 
-
     def in_place_stoplist(self, stoplist=None, freq=0):
-        """ 
-        Changes a Corpus object with words in the stoplist removed and with 
+        """
+        Changes a Corpus object with words in the stoplist removed and with
         words of frequency <= `freq` removed.
-        
+
         :param stoplist: The list of words to be removed.
         :type stoplist: list
 
         :param freq: A threshold where words of frequency <= 'freq' are
             removed. Default is 0.
         :type freq: integer, optional
-            
+
         :returns: Copy of corpus with words in the stoplist and words
             of frequnecy <= 'freq' removed.
 
@@ -676,11 +678,10 @@ class Corpus(BaseCorpus):
             freq_stop = np.where(cfs <= freq)[0]
             stop.update(freq_stop)
 
-
         if not stop:
             # print 'Stop list is empty.'
             return self
-    
+
         # print 'Removing stop words', datetime.now()
         f = np.vectorize(stop.__contains__)
 
@@ -689,19 +690,25 @@ class Corpus(BaseCorpus):
 
         BASE = len(self.context_data) - 1
         # gathering list of new indicies from narrowest tokenization
+
         def find_new_indexes(INTO, BASE=-1):
-            locs = np.where(np.in1d(self.context_data[BASE]['idx'], self.context_data[INTO]['idx']))[0]
+            BASE_IDX = self.context_data[BASE]['idx']
+            INTO_IDX = self.context_data[INTO]['idx']
+            locs = np.where(np.in1d(BASE_IDX, INTO_IDX))[0]
 
             # creating a list of lcoations that are non-identical
-            new_locs = np.array([loc for i, loc in enumerate(locs)
-                                     if i+1 == len(locs) or self.context_data[BASE]['idx'][locs[i]] != self.context_data[BASE]['idx'][locs[i+1]]])
+            new_locs = np.array(
+                [loc for i, loc in enumerate(locs)
+                 if (i + 1 == len(locs) or
+                     BASE_IDX[locs[i]] != BASE_IDX[locs[i + 1]]]))
 
             # creating a search for locations that ARE identical
-            idxs = np.insert(self.context_data[INTO]['idx'], [0,-1], [-1,-1])
+            idxs = np.insert(self.context_data[INTO]['idx'], [0, -1], [-1, -1])
             same_spots = np.where(np.equal(idxs[:-1], idxs[1:]))[0]
 
             # readding the identical locations
-            really_new_locs = np.insert(new_locs, same_spots, new_locs[same_spots-1])
+            really_new_locs = np.insert(
+                new_locs, same_spots, new_locs[same_spots - 1])
             return really_new_locs
 
         # Calculate new base tokens
@@ -710,7 +717,7 @@ class Corpus(BaseCorpus):
         spans = []
         for t in tokens:
             new_t = t[np.logical_not(f(t))] if t.size else t
-            
+
             # TODO: append to new_corpus as well
             spans.append(new_t.size if new_t.size else 0)
             if new_t.size:
@@ -733,38 +740,39 @@ class Corpus(BaseCorpus):
 
         # print 'Rebuilding corpus and updating stop words', datetime.now()
         self.corpus = np.concatenate(new_corpus)
-        #self.corpus[f(self.corpus)]
+        # self.corpus[f(self.corpus)]
         self.stopped_words.update(self.words[stop])
 
-        #print 'adjusting words list', datetime.now()
+        # print 'adjusting words list', datetime.now()
         new_words = np.delete(self.words, stop)
 
         # print 'rebuilding word dictionary', datetime.now()
-        new_words_int = dict((word,i) for i, word in enumerate(new_words)) 
-        old_to_new =  dict((self.words_int[word],i) for i, word in enumerate(new_words)) 
+        new_words_int = dict((word, i) for i, word in enumerate(new_words))
+        old_to_new = dict((self.words_int[word], i)
+                          for i, word in enumerate(new_words))
 
-        #print "remapping corpus", datetime.now()
+        # print "remapping corpus", datetime.now()
         f = np.vectorize(old_to_new.__getitem__)
         self.corpus[:] = f(self.corpus)
 
-        #print 'storing new word dicts', datetime.now()
+        # print 'storing new word dicts', datetime.now()
         self.words = new_words
         self.words_int = new_words_int
 
         return self
 
     def apply_stoplist(self, stoplist=[], freq=0):
-        """ 
+        """
         Takes a Corpus object and returns a copy of it with words in the
         stoplist removed and with words of frequency <= `freq` removed.
-        
+
         :param stoplist: The list of words to be removed.
         :type stoplist: list
 
         :param freq: A threshold where words of frequency <= 'freq' are
             removed. Default is 0.
         :type freq: integer, optional
-            
+
         :returns: Copy of corpus with words in the stoplist and words
             of frequnecy <= 'freq' removed.
 
@@ -773,11 +781,11 @@ class Corpus(BaseCorpus):
         print "Using apply_stoplist for some reason"
         stoplist = set(stoplist)
         if freq:
-            #TODO: Use the TF model instead
+            # TODO: Use the TF model instead
 
             # print 'Computing collection frequencies'
             cfs = np.zeros_like(self.words, dtype=self.corpus.dtype)
-    
+
             for word in self.corpus:
                 cfs[word] += 1
 
@@ -797,7 +805,7 @@ class Corpus(BaseCorpus):
         if not stop:
             # print 'Stop list is empty.'
             return self
-    
+
         # print 'Removing stop words'
         f = np.vectorize(lambda x: x not in stop)
         corpus = self.corpus[f(self.corpus)]
@@ -813,7 +821,8 @@ class Corpus(BaseCorpus):
             tok['idx'] = np.cumsum(spans)
             context_data.append(tok)
 
-        c = Corpus(corpus, context_data=context_data, context_types=self.context_types)
+        c = Corpus(corpus, context_data=context_data,
+                   context_types=self.context_types)
         if self.stopped_words:
             c.stopped_words.update(self.stopped_words)
         c.stopped_words.update(stoplist)
@@ -847,7 +856,6 @@ def add_metadata(corpus, ctx_type, new_field, metadata):
     return corpus
 
 
-
 def align_corpora(old_corpus, new_corpus, remove_empty=True):
     """Takes two Corpus objects `old_corpus` and `new_corpus` and returns
     a copy of `new_corpus` with the following modifications: (1) the
@@ -873,4 +881,3 @@ def align_corpora(old_corpus, new_corpus, remove_empty=True):
     out._set_words_int()
 
     return out
-
